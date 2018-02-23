@@ -115,17 +115,10 @@ checkSuc (ok (T ⇒ T₁) t same) = inl "Can't do suc of function"
 checkLam : ∀ name T {Γ u} → Checked ((name , T) ∷ Γ) u → String + Checked Γ (lam name T u)
 checkLam name S (ok T t same) = inr (ok T (lam name S t) (cong (lam name S) same))
 
-checkAppEq : ∀ {S Γ T} (tf : TermT Γ (S ⇒ T)) (tx : TermT Γ S)
-               (f x : TermU) →
-             forgetTypes tf ≡ f →
-             forgetTypes tx ≡ x →
-             forgetTypes (app tf tx) ≡ app f x
-checkAppEq tf tx f x same-f same-x rewrite same-f | same-x = refl
-
 checkApp : ∀ {Γ f x} → Checked Γ f → Checked Γ x → String + Checked Γ (app f x)
 checkApp (ok Nat tf same-f) (ok TX tx same-x) = inl "Can't apply a Nat to an argument"
-checkApp (ok {f} (S ⇒ T) tf same-f) (ok {x} TX tx same-x) with dec-type S TX
-checkApp (ok {f} (S ⇒ T) tf same-f) (ok {x} TX tx same-x) | eq p rewrite p = inr (ok T (app tf tx) (checkAppEq tf tx f x same-f same-x))
+checkApp (ok (S ⇒ T) tf same-f) (ok TX tx same-x) with dec-type S TX
+checkApp (ok (S ⇒ T) tf refl) (ok .S tx refl) | eq refl = inr (ok T (app tf tx) refl)
 checkApp (ok (S ⇒ T) tf same-f) (ok TX tx same-x) | neq x = inl "Arg type does not match function type"
 
 weakenVar : ∀ {n v T Γ} → Checked Γ (var n) → Checked ((v , T) ∷ Γ) (var n)
