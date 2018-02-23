@@ -1,73 +1,152 @@
 module _ where
 
-data 𝔹 : Set where
-  true false : 𝔹
+data ⊥ : Set where
+⊥-elim : {A : Set} → ⊥ → A
+⊥-elim ()
 
-if_then_else_ : {A : Set} (b : 𝔹) (t f : A) → A
-if true then t else f = t
-if false then t else f = f
+open import Agda.Builtin.Bool
+open import Agda.Builtin.Equality
+open import Agda.Builtin.Nat hiding (_+_) renaming (Nat to ℕ)
+open import Agda.Builtin.String
 
-data ℕ : Set where
-  zero : ℕ
-  suc : ℕ → ℕ
-{-# BUILTIN NATURAL ℕ #-}
+cong : {A B : Set} (f : A → B) {x y : A} (eq : x ≡ y) → f x ≡ f y
+cong f refl = refl
 
-_+_ : (m n : ℕ) → ℕ
-zero + n = n
-suc m + n = suc (m + n)
+sym : {A : Set} {x y : A} (eq : x ≡ y) → y ≡ x
+sym refl = refl
 
 data List (A : Set) : Set where
   [] : List A
   _∷_ : (x : A) (xs : List A) → List A
 infixr 5 _∷_
 
-infixl 3 _∈_
-data _∈_ {A : Set} (x : A) : List A → Set where
-  zero : {xs : List A} → x ∈ x ∷ xs
-  suc : {y : A} {xs : List A} (p : x ∈ xs) → x ∈ y ∷ xs
+record _×_ (A B : Set) : Set where
+  constructor _,_
+  field
+    fst : A
+    snd : B
 
-lookup : {A : Set} {x : A} {xs : List A} (i : x ∈ xs) → A
-lookup {x = x} zero = x
-lookup (suc i) = lookup i
+record Σ (A : Set) (B : A → Set) : Set where
+  constructor _,_
+  field
+    fst : A
+    snd : B fst
+
+data _+_ (A B : Set) : Set where
+  inl : A → A + B
+  inr : B → A + B
+
+over-inr : {A B1 B2 : Set} (f : B1 → B2) (e : A + B1) → A + B2
+over-inr f (inl x) = inl x
+over-inr f (inr x) = inr (f x)
+
+data Dec {A : Set} (x y : A) : Set where
+  eq : x ≡ y → Dec x y
+  neq : (x ≡ y → ⊥) → Dec x y
+
+_>>=_ : {A B C : Set} → A + B → (B → A + C) → A + C
+inl x >>= f = inl x
+inr x >>= f = f x
+
+dec-string : (x y : String) → Dec x y
+dec-string x y with primStringEquality x y
+dec-string x y | false = neq (⊥-elim trustme) where postulate trustme : ⊥
+dec-string x y | true = eq primTrustMe where open import Agda.Builtin.TrustMe
 
 data All {A : Set} (P : A → Set) : List A → Set where
   [] : All P []
-  _∷_ : {xs : List A} {x : A} (px : P x) (pxs : All P xs) → All P (x ∷ xs)
+  _∷_ : {x : A} {xs : List A} (px : P x) (pxs : All P xs) → All P (x ∷ xs)
 
-lookup-all : {A : Set} {x : A} {xs : List A} {P : A → Set} (i : x ∈ xs) (a : All P xs) → P x
-lookup-all zero (px ∷ pxs) = px
-lookup-all (suc i) (px ∷ pxs) = lookup-all i pxs
+data Any {A : Set} (P : A → Set) : List A → Set where
+  zero : {x : A} {xs : List A} → Any P (x ∷ xs)
+  suc : {x : A} {xs : List A} (p : Any P xs) → Any P (x ∷ xs)
+
+_∈_ : {A : Set} (x : A) (xs : List A) → Set
+x ∈ xs = Any (x ≡_) xs
 
 data Type : Set where
-  nat bool : Type
+  Nat : Type
+  _⇒_ : (A B : Type) → Type
 
-data Expr (Γ : List Type) : Type → Set where
-  var : {x : Type} (i : x ∈ Γ) → Expr Γ x
-  value : (n : ℕ) → Expr Γ nat
-  true false : Expr Γ bool
-  add : (m n : Expr Γ nat) → Expr Γ nat
-  if : {r : Type} (b : Expr Γ bool) (t f : Expr Γ r) → Expr Γ r
+injl⇒ : {A B C D : Type} → (A ⇒ B) ≡ (C ⇒ D) -> A ≡ C
+injl⇒ refl = refl
 
-Value : Type → Set
-Value nat = ℕ
-Value bool = 𝔹
+injr⇒ : {A B C D : Type} → (A ⇒ B) ≡ (C ⇒ D) -> B ≡ D
+injr⇒ refl = refl
 
-eval : {t : Type} {Γ : List Type} (env : All Value Γ) (expr : Expr Γ t) → Value t
-eval env (var i) = lookup-all i env
-eval env (value n) = n
-eval env true = true
-eval env false = false
-eval env (add m n) = eval env m + eval env n
-eval env (if b t f) = if (eval env b) then (eval env t) else (eval env f)
+dec-type : (S T : Type) → Dec S T
+dec-type Nat Nat = eq refl
+dec-type Nat (T ⇒ T₁) = neq (λ ())
+dec-type (S ⇒ S₁) Nat = neq (λ ())
+dec-type (S ⇒ T) (P ⇒ Q) with dec-type S P
+dec-type (S ⇒ T) (P ⇒ Q) | eq p rewrite p with dec-type T Q
+dec-type (S ⇒ T) (P ⇒ Q) | eq p | eq q rewrite q = eq refl
+dec-type (S ⇒ T) (P ⇒ Q) | eq p | neq q = neq λ r → q (injr⇒ r)
+dec-type (S ⇒ T) (P ⇒ Q) | neq p = neq λ r → p (injl⇒ r)
 
-module Test where
-  open import Agda.Builtin.Equality
+data TermU : Set where
+  var : (name : String) → TermU
+  lit : ℕ → TermU
+  suc : (num : TermU) → TermU
+  lam : (name : String) (T : Type) (body : TermU) → TermU
+  app : (fun arg : TermU) → TermU
 
-  Γ : List Type
-  Γ = bool ∷ bool ∷ nat ∷ []
+data TermT (Γ : List (String × Type)) : Type → Set where
+  var : (name : String) (T : Type) (valid : (name , T) ∈ Γ) → TermT Γ T
+  lit : ℕ → TermT Γ Nat
+  suc : (num : TermT Γ Nat) → TermT Γ Nat
+  lam : (name : String) (S : Type) {T : Type} (body : TermT (name , S ∷ Γ) T) → TermT Γ T
+  app : {S T : Type} (fun : TermT Γ (S ⇒ T)) (arg : TermT Γ S) → TermT Γ T
 
-  env : All Value Γ
-  env = true ∷ false ∷ 21 ∷ []
+forgetTypes : {Γ : List (String × Type)} {T : Type} → TermT Γ T → TermU
+forgetTypes (var name T valid) = var name
+forgetTypes (lit x) = lit x
+forgetTypes (suc t) = suc (forgetTypes t)
+forgetTypes (lam name S b) = lam name S (forgetTypes b)
+forgetTypes (app f x) = app (forgetTypes f) (forgetTypes x)
 
-  p1 : eval env (add (value 10) (if (var zero) (var (suc (suc zero))) (value 6))) ≡ 31
-  p1 = refl
+data Checked (Γ : List (String × Type)) : TermU → Set where
+  ok : {u : TermU} (T : Type) (t : TermT Γ T) (same : forgetTypes t ≡ u) → Checked Γ u
+
+checkSuc : ∀ {Γ u} → Checked Γ u → String + Checked Γ (suc u)
+checkSuc (ok Nat t same) = inr (ok Nat (suc t) (cong suc same))
+checkSuc (ok (T ⇒ T₁) t same) = inl "Can't do suc of function"
+
+checkLam : ∀ name T {Γ u} → Checked ((name , T) ∷ Γ) u → String + Checked Γ (lam name T u)
+checkLam name S (ok T t same) = inr (ok T (lam name S t) (cong (lam name S) same))
+
+checkAppEq : ∀ {S Γ T} (tf : TermT Γ (S ⇒ T)) (tx : TermT Γ S)
+               (f x : TermU) →
+             forgetTypes tf ≡ f →
+             forgetTypes tx ≡ x →
+             forgetTypes (app tf tx) ≡ app f x
+checkAppEq tf tx f x same-f same-x rewrite same-f | same-x = refl
+
+checkApp : ∀ {Γ f x} → Checked Γ f → Checked Γ x → String + Checked Γ (app f x)
+checkApp (ok Nat tf same-f) (ok TX tx same-x) = inl "Can't apply a Nat to an argument"
+checkApp (ok {f} (S ⇒ T) tf same-f) (ok {x} TX tx same-x) with dec-type S TX
+checkApp (ok {f} (S ⇒ T) tf same-f) (ok {x} TX tx same-x) | eq p rewrite p = inr (ok T (app tf tx) (checkAppEq tf tx f x same-f same-x))
+checkApp (ok (S ⇒ T) tf same-f) (ok TX tx same-x) | neq x = inl "Arg type does not match function type"
+
+weakenVar : ∀ {n v T Γ} → Checked Γ (var n) → Checked ((v , T) ∷ Γ) (var n)
+weakenVar (ok T (var name .T valid) same) = ok T (var name T (suc valid)) same
+weakenVar (ok .Nat (lit x) ())
+weakenVar (ok .Nat (suc t) ())
+weakenVar (ok T (lam name S t) ())
+weakenVar (ok T (app t t₁) ())
+
+lookupVar : ∀ name Γ → String + Checked Γ (var name)
+lookupVar n [] = inl (primStringAppend "Var not found: " n)
+lookupVar n ((v , T) ∷ Γ) with dec-string n v
+lookupVar n ((v , T) ∷ Γ) | eq p = inr (ok T (var n T zero) refl)
+lookupVar n ((v , T) ∷ Γ) | neq p = lookupVar n Γ >>= λ c → inr (weakenVar c)
+
+typeCheck : (Γ : List (String × Type)) (u : TermU) → String + Checked Γ u
+typeCheck Γ (var name) = lookupVar name Γ
+typeCheck Γ (lit x) = inr (ok Nat (lit x) refl)
+typeCheck Γ (suc u) = typeCheck Γ u >>= checkSuc
+typeCheck Γ (lam name T u) = typeCheck (name , T ∷ Γ) u >>= checkLam name T
+typeCheck Γ (app f x) = 
+  typeCheck Γ f >>= λ tf →
+  typeCheck Γ x >>= λ tx →
+  checkApp tf tx
